@@ -25,6 +25,7 @@ from ventmap.detection import detect_version_v2
 class BadDescriptorError(Exception):
     pass
 
+from sys import exit
 
 class VentilatorBase(object):
     def __init__(self, descriptor):
@@ -42,6 +43,7 @@ class VentilatorBase(object):
         self.cur_abs_time = None
         self.vent_bn = 0
         self.rel_bn = 0
+        self.pt_id = None
         try:
             self.descriptor = clear_descriptor_null_bytes(self.descriptor)
         except UnicodeDecodeError:
@@ -49,10 +51,22 @@ class VentilatorBase(object):
 
         self.descriptor.seek(0)
         first_line = self.descriptor.readline()
-        self.bs_col, self.ncol, self.ts_1st_col, self.ts_1st_row = detect_version_v2(first_line)
+        self.bs_col, self.ncol, self.ts_1st_col, self.ts_1st_row,self.ts_2nd_col,self.deid_study_idcol = detect_version_v2(first_line)
         self.descriptor.seek(0)
 
     def get_data(self, flow, pressure):
+        if self.deid_study_idcol is not None:
+            return {
+            "pt_id":self.pt_id,
+            "rel_bn": self.rel_bn,
+            "vent_bn": self.vent_bn,
+            "flow": flow,
+            "pressure": pressure,
+            "bs_time": round(self.rel_bs_time, 2),
+            "frame_dur": round(len(flow) * self.dt, 2),
+            "dt": self.dt,
+            'abs_bs': self.abs_bs_time.strftime(OUT_DATETIME_FORMAT) if self.abs_bs_time else None,
+        }
         return {
             "rel_bn": self.rel_bn,
             "vent_bn": self.vent_bn,
@@ -71,19 +85,33 @@ class VentilatorBase(object):
         if len(ts) == 29:  # if extra 3 digits on end of microsecond
             ts = ts[:-3]
         try:
+#             print("try")
             self.abs_bs_time = parser.parse(ts)
         except:
-            self.abs_bs_time = datetime.strptime(ts, IN_DATETIME_FORMAT)
+#             print("except",ts,IN_DATETIME_FORMAT) 
+            try:
+                self.abs_bs_time = datetime.strptime(ts, IN_DATETIME_FORMAT)
+            except :
+                try:
+                    self.abs_bs_time = self.cur_abs_time + timedelta(seconds=self.dt)
+                except:
+                    return
+        print("abs bs time",self.abs_bs_time)
 
     def set_abs_bs_time(self, row):
-        if self.ts_1st_col:
+        if self.ts_2nd_col:
+            self.try_parse_1st_col_ts(row[1])
+            
+        elif self.ts_1st_col:
             self.try_parse_1st_col_ts(row[0])
         else:
             self.abs_bs_time = datetime.strptime(row[0], IN_DATETIME_FORMAT)
         self.cur_abs_time = self.abs_bs_time
 
     def set_abs_bs_time_if_bs(self, row):
-        if self.ts_1st_col:
+        if self.ts_2nd_col:
+            self.try_parse_1st_col_ts(row[1])
+        elif self.ts_1st_col:
             self.try_parse_1st_col_ts(row[0])
         elif self.abs_bs_time is not None:
             self.abs_bs_time = self.cur_abs_time + timedelta(seconds=self.dt)
@@ -124,21 +152,36 @@ class VentilatorBase(object):
 
         for row in self.descriptor.readlines():
             row = row.strip().split(',')
+
+            if self.deid_study_idcol is not None :
+                if row[self.deid_study_idcol]!='' and row[self.deid_study_idcol]!='deidentified_study_id':
+                    self.pt_id = int(re.sub('\s+','',row[self.deid_study_idcol]))
+#                 print(self.pt_id)
+            
+#             import time
+#             time.sleep(0.01)
             try:
                 row[self.bs_col]
+#                 print("datesearch",date_search.search(row[1]))
+#                 if date_search.search(row[1]):
+#                     self.try_parse_1st_col_ts(row[1])
             except IndexError:
                 continue
 
-            if date_search.search(row[0]) and not self.ts_1st_col:
+            if date_search.search(row[0]) and not self.ts_1st_col and not self.ts_2nd_col :
+#                 print("inside and",row,row[0],"ts 1col",self.ts_1st_col,"other",self.ts_1st_row)
                 self.set_abs_bs_time(row)
+#                 print("abs time set to",self.abs_bs_time)
                 continue
 
             if row[self.bs_col].strip() == "BS":
                 if not skip_breaths_without_be and has_bs:
                     if len(flow) > 0:
+                        print("inside bs,",row)
                         last_breath_time = self.dt * len(flow)
                         data_list.append(self.get_data(flow, pressure))
                 self.set_rel_bs_time(last_breath_time)
+#                 print("INSIDE BS",last_breath_time)
                 self.set_abs_bs_time_if_bs(row)
                 self.rel_bn += 1
                 has_bs = True
@@ -174,6 +217,8 @@ class VentilatorBase(object):
                 has_bs = False
                 if len(flow) > 0:
                     last_breath_time = self.dt * len(flow)
+                    
+#                     self.pt_id = int(row[self.deid_study_idcol].strip())
                     data_list.append(self.get_data(flow, pressure))
                     flow, pressure = [], []
             else:
@@ -190,8 +235,10 @@ class VentilatorBase(object):
             if not skip_breaths_without_be:
                 if len(flow) > 0:
                     last_breath_time = self.dt * len(flow)
+                    
+#                     self.pt_id = int(row[self.deid_study_idcol].strip())
                     data_list.append(self.get_data(flow, pressure))
-
+        
         return data_list
 
 

@@ -42,6 +42,8 @@ def detect_version_v2(first):
     2015-06-09 02:35:07.685091508, BS, S:114,
     """
     first = first.strip(',\r\n')
+    print(first,len(first),len(first.split(',')))
+    deidentified_study_idcol,timestamp_2nd_col = None,False
     if len(first.split(','))==3 or len(first.split('-'))==3:
         timestamp_1st_col = True
         timestamp_1st_row = False
@@ -49,6 +51,16 @@ def detect_version_v2(first):
         ncol = 3
 
     #detect 3rd type, with date time in first row
+    elif len(first.split(','))==4:
+        print("This is of new format")
+        print("Every row follows => pt _id, timestamp, flow,pressure")
+        timestamp_1st_col = False
+        timestamp_1st_row = False
+        deidentified_study_idcol = 0
+        timestamp_2nd_col = True
+        BScol = 2
+        ncol = 4
+        
     elif len(first.split('-'))==6:
         timestamp_1st_col = False
         timestamp_1st_row = True
@@ -61,7 +73,7 @@ def detect_version_v2(first):
         timestamp_1st_row = False
         BScol = 0
         ncol = 2
-    return  BScol, ncol, timestamp_1st_col, timestamp_1st_row
+    return  BScol, ncol, timestamp_1st_col, timestamp_1st_row,timestamp_2nd_col,deidentified_study_idcol
 
 
 def detect_version_v3(first):

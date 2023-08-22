@@ -20,17 +20,16 @@ from ventmap.constants import EXPERIMENTAL_META_HEADER, IN_DATETIME_FORMAT, META
 from ventmap.detection import detect_version_v2
 from ventmap.raw_utils import extract_raw
 
-
 def write_breath_meta(array, outfile):
     with open(outfile, "wb") as out:
         writer = csv.writer(out)
         writer.writerows(array)
 
 
-def get_file_breath_meta(file, tve_pos=True, ignore_missing_bes=True, rel_bn_interval=[], vent_bn_interval=[], to_data_frame=False, spec_vent_bns=[], spec_rel_bns=[]):
+def get_file_breath_meta(file,tve_pos=True, ignore_missing_bes=False, rel_bn_interval=[], vent_bn_interval=[], to_data_frame=False, new_format=False,spec_vent_bns=[], spec_rel_bns=[]):
     return _get_file_breath_meta(
         get_production_breath_meta, file, tve_pos, ignore_missing_bes,
-        rel_bn_interval, vent_bn_interval, to_data_frame, spec_vent_bns, spec_rel_bns
+        rel_bn_interval, vent_bn_interval, to_data_frame, spec_vent_bns, spec_rel_bns,new_format,META_HEADER
     )
 
 
@@ -41,22 +40,29 @@ def get_file_experimental_breath_meta(file, tve_pos=True, ignore_missing_bes=Tru
     )
 
 
-def _get_file_breath_meta(func, file, tve_pos, ignore_missing_bes, rel_bn_interval, vent_bn_interval, to_data_frame, spec_vent_bns, spec_rel_bns):
+def _get_file_breath_meta(func, file, tve_pos, ignore_missing_bes, rel_bn_interval, vent_bn_interval, to_data_frame, spec_vent_bns, spec_rel_bns,new_format,META_HEADER):
+    META_HEADER =META_HEADER
     if isinstance(file, str):
+        print("file is a str name, opening it using open")
         file = open(file, encoding='ascii', errors='ignore')
     if "experimental" in func.__name__:
         array = [EXPERIMENTAL_META_HEADER]
     else:
+        if new_format is False:
+            
+            print(META_HEADER)
+            META_HEADER.remove('Patient Id')
         array = [META_HEADER]
-
+    
+    print(array)
     # case that the file is just a raw_utils array of breaths
     if isinstance(file, list):
         for b in file:
             array.append(func(b))
     else:  # case the file is a file descriptor
-        for breath in extract_raw(file, ignore_missing_bes,
-            rel_bn_interval=rel_bn_interval, vent_bn_interval=vent_bn_interval,
-            spec_vent_bns=spec_vent_bns, spec_rel_bns=spec_rel_bns):
+        
+        for breath in extract_raw(file, ignore_missing_bes,rel_bn_interval=rel_bn_interval, vent_bn_interval=vent_bn_interval,spec_vent_bns=spec_vent_bns, spec_rel_bns=spec_rel_bns):
+#             print("one breath",breath)
             array.append(func(breath))
 
     if not to_data_frame:
@@ -85,6 +91,11 @@ def get_production_breath_meta(breath, tve_pos=True, calc_tv3=False, to_series=F
     dt = breath["dt"]
     flow = breath["flow"]
     pressure = breath["pressure"]
+    try :
+        pt_id = breath['pt_id']
+    except:
+        pt_id = None
+#     print(breath,"breath inside production")
     if 't' not in breath:
         rel_time_array = [i * dt for i in range(len(flow))]
     else:
@@ -254,18 +265,30 @@ def get_production_breath_meta(breath, tve_pos=True, calc_tv3=False, to_series=F
     # 25: x02index, 26: tvi2, 27: tve2, 28: x0_index, 29: abs_time_at_BS,
     # 30: abs_time_at_x0, 31: abs_time_at_BE, 32: rel_time_at_BS,
     # 33: rel_time_at_x0, 34: rel_time_at_BE, 35: min_pressure
-
-    breath_metaRow = [
-        rel_bn, vent_bn, round(rel_time_at_BS, 2), round(rel_time_at_x0, 2), round(rel_time_at_BE, 2), IEratio, iTime,
+    if pt_id is not None:
+        breath_metaRow = [
+        pt_id,rel_bn, vent_bn, round(rel_time_at_BS, 2), round(rel_time_at_x0, 2), round(rel_time_at_BE, 2), IEratio, iTime,
         eTime, RR, tvi, tve, TVratio, maxF, minF, maxP, PIP,
         Maw, peep, ipAUC, epAUC, '', bs_time, x01time, tvi1, tve1, x02time,
         tvi2, tve2, x0_index, abs_time_at_BS, abs_time_at_x0, abs_time_at_BE,
         rel_time_at_BS, rel_time_at_x0, rel_time_at_BE, min_pressure]
+    else:
+        breath_metaRow = [
+            rel_bn, vent_bn, round(rel_time_at_BS, 2), round(rel_time_at_x0, 2), round(rel_time_at_BE, 2), IEratio, iTime,
+            eTime, RR, tvi, tve, TVratio, maxF, minF, maxP, PIP,
+            Maw, peep, ipAUC, epAUC, '', bs_time, x01time, tvi1, tve1, x02time,
+            tvi2, tve2, x0_index, abs_time_at_BS, abs_time_at_x0, abs_time_at_BE,
+            rel_time_at_BS, rel_time_at_x0, rel_time_at_BE, min_pressure]
 
     if not to_series:
         return breath_metaRow
     else:
-        return pd.Series(breath_metaRow, index=META_HEADER)
+        if pt_id is not None:
+            print(META_HEADER)
+            return pd.Series(breath_metaRow, index=META_HEADER)
+        else:
+            print(META_HEADER.remove('Patient Id'))
+            return pd.Series(breath_metaRow, index=META_HEADER.remove('Patient Id'))
 
 
 def get_experimental_breath_meta(breath, tve_pos=True):
