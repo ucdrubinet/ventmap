@@ -4,7 +4,7 @@ META_HEADER = ROW_PREFIX_NAMES + [
     'tve:tvi ratio', 'maxF', 'minF', 'maxP', 'PIP', 'Maw', 'PEEP', 'ipAUC',
     'epAUC', ' ', 'BS.1', 'x01', 'tvi1', 'tve1', 'x02', 'tvi2', 'tve2',
     'x0_index', 'abs_time_at_BS', 'abs_time_at_x0', 'abs_time_at_BE', 'rel_time_at_BS',
-    'rel_time_at_x0', 'rel_time_at_BE', 'min_pressure']
+    'rel_time_at_x0', 'rel_time_at_BE', 'min_pressure','dyn_compliance']
 
 EXPERIMENTAL_META_HEADER = META_HEADER + [
     'minF_to_zero', 'pef_+0.16_to_zero', 'mean_flow_from_pef', 'dyn_compliance',

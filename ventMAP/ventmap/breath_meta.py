@@ -10,13 +10,16 @@ from datetime import datetime, timedelta
 from dateutil import parser
 from io import open
 
+# from parliament.analyze import FileCalculations
+# from parliament.polynomial_model import perform_polynomial_model
+# from parliament.other_calcs import calc_volumes
 import numpy as np
 import pandas as pd
 from scipy import var
 from scipy.integrate import simps
 
 from ventmap import SAM
-from ventmap.constants import EXPERIMENTAL_META_HEADER, IN_DATETIME_FORMAT, META_HEADER, OUT_DATETIME_FORMAT
+from ventmap.constants import EXPERIMENTAL_META_HEADER, IN_DATETIME_FORMAT, META_HEADER, OUT_DATETIME_FORMAT,ROW_PREFIX_NAMES
 from ventmap.detection import detect_version_v2
 from ventmap.raw_utils import extract_raw
 
@@ -33,21 +36,29 @@ def get_file_breath_meta(file,tve_pos=True, ignore_missing_bes=False, rel_bn_int
     )
 
 
-def get_file_experimental_breath_meta(file, tve_pos=True, ignore_missing_bes=True, rel_bn_interval=[], vent_bn_interval=[], to_data_frame=False, spec_vent_bns=[], spec_rel_bns=[]):
+def get_file_experimental_breath_meta(file, tve_pos=True, ignore_missing_bes=True, rel_bn_interval=[], vent_bn_interval=[], to_data_frame=False,new_format=False, spec_vent_bns=[], spec_rel_bns=[]):
     return _get_file_breath_meta(
         get_experimental_breath_meta, file, tve_pos, ignore_missing_bes,
-        rel_bn_interval, vent_bn_interval, to_data_frame, spec_vent_bns, spec_rel_bns
+        rel_bn_interval, vent_bn_interval, to_data_frame, spec_vent_bns, spec_rel_bns,new_format,EXPERIMENTAL_META_HEADER
     )
 
 
 def _get_file_breath_meta(func, file, tve_pos, ignore_missing_bes, rel_bn_interval, vent_bn_interval, to_data_frame, spec_vent_bns, spec_rel_bns,new_format,META_HEADER):
-    META_HEADER =META_HEADER
+    
+    print("file befroe opening",file,type(file))
     if isinstance(file, str):
         print("file is a str name, opening it using open")
         file = open(file, encoding='ascii', errors='ignore')
+        print("file after opening",file)
     if "experimental" in func.__name__:
+        META_HEADER =EXPERIMENTAL_META_HEADER
+        if new_format is False:
+            
+            print(META_HEADER)
+            META_HEADER.remove('Patient Id')
         array = [EXPERIMENTAL_META_HEADER]
     else:
+        META_HEADER =META_HEADER
         if new_format is False:
             
             print(META_HEADER)
@@ -62,7 +73,7 @@ def _get_file_breath_meta(func, file, tve_pos, ignore_missing_bes, rel_bn_interv
     else:  # case the file is a file descriptor
         
         for breath in extract_raw(file, ignore_missing_bes,rel_bn_interval=rel_bn_interval, vent_bn_interval=vent_bn_interval,spec_vent_bns=spec_vent_bns, spec_rel_bns=spec_rel_bns):
-#             print("one breath",breath)
+            print("one breath",breath)
             array.append(func(breath))
 
     if not to_data_frame:
@@ -85,6 +96,8 @@ def get_production_breath_meta(breath, tve_pos=True, calc_tv3=False, to_series=F
     :param calc_tv3: Calculate tvi/tve3
     :param to_series: output breath to a pandas Series object
     """
+    print("This is breath",breath)
+
     rel_bn = breath['rel_bn']
     vent_bn = breath['vent_bn']
     bs_time = breath["bs_time"]
@@ -248,6 +261,7 @@ def get_production_breath_meta(breath, tve_pos=True, calc_tv3=False, to_series=F
         min_pressure = round(min(min_p_obs), 2)
     else:
         min_pressure = np.nan
+    dyn_compliance = (tvi / 1000) / (PIP - peep)
 
     # Unfortunately pif, derived plat, resistance, and derived compliance just aren't there
     # yet. The calculations seem to work well on volume control and even pressure
@@ -271,14 +285,14 @@ def get_production_breath_meta(breath, tve_pos=True, calc_tv3=False, to_series=F
         eTime, RR, tvi, tve, TVratio, maxF, minF, maxP, PIP,
         Maw, peep, ipAUC, epAUC, '', bs_time, x01time, tvi1, tve1, x02time,
         tvi2, tve2, x0_index, abs_time_at_BS, abs_time_at_x0, abs_time_at_BE,
-        rel_time_at_BS, rel_time_at_x0, rel_time_at_BE, min_pressure]
+        rel_time_at_BS, rel_time_at_x0, rel_time_at_BE, min_pressure,dyn_compliance]
     else:
         breath_metaRow = [
             rel_bn, vent_bn, round(rel_time_at_BS, 2), round(rel_time_at_x0, 2), round(rel_time_at_BE, 2), IEratio, iTime,
             eTime, RR, tvi, tve, TVratio, maxF, minF, maxP, PIP,
             Maw, peep, ipAUC, epAUC, '', bs_time, x01time, tvi1, tve1, x02time,
             tvi2, tve2, x0_index, abs_time_at_BS, abs_time_at_x0, abs_time_at_BE,
-            rel_time_at_BS, rel_time_at_x0, rel_time_at_BE, min_pressure]
+            rel_time_at_BS, rel_time_at_x0, rel_time_at_BE, min_pressure,dyn_compliance]
 
     if not to_series:
         return breath_metaRow
@@ -298,22 +312,38 @@ def get_experimental_breath_meta(breath, tve_pos=True):
     dt = breath["dt"]
     flow = breath["flow"]
     pressure = breath["pressure"]
+    try :
+        pt_id = breath['pt_id']
+    except:
+        pt_id = None
     if 't' not in breath:
         rel_time_array = [i * dt for i in range(len(flow))]
     else:
         rel_time_array = breath["t"]
     # set last data point as last value of breath
-
+    
     non_experimental = get_production_breath_meta(breath, tve_pos)
-    x0_index = non_experimental[28]
-    tvi = non_experimental[9]
-    minF = non_experimental[13]
-    PIP = non_experimental[15]
-    peep = non_experimental[17]
+    
+
+    if pt_id is not None:
+        x0_index = non_experimental[len(ROW_PREFIX_NAMES)+25]
+        tvi = non_experimental[len(ROW_PREFIX_NAMES)+7]
+        minF = non_experimental[len(ROW_PREFIX_NAMES)+11]
+        PIP = non_experimental[len(ROW_PREFIX_NAMES)+13]
+        peep = non_experimental[len(ROW_PREFIX_NAMES)+15]
+    else:
+        x0_index = non_experimental[25]
+        tvi = non_experimental[7]
+        minF = non_experimental[11]
+        PIP = non_experimental[13]
+        peep = non_experimental[15]
+    print(x0_index)
+    print(flow)
+    print("non experimental",non_experimental,sep="\n")
     eFlow = flow[x0_index:]  # technically this might need to be +1
 
     # convert tvi to liters. Units are L / cm H20
-    dyn_compliance = (tvi / 1000) / (PIP - peep)
+    
     pef_to_zero = SAM.find_slope_from_minf_to_zero(rel_time_array, flow, minF)
     # XXX must add additional time params here so we can see what works best
     pef_plus_16_to_zero = SAM.find_slope_from_minf_to_zero(
@@ -351,7 +381,7 @@ def get_experimental_breath_meta(breath, tve_pos=True):
     # 49: pressure_itime_shear,
     return non_experimental + [
         pef_to_zero, pef_plus_16_to_zero,
-        mean_flow_from_pef, dyn_compliance, vol_at_05,
+        mean_flow_from_pef, vol_at_05,
         vol_at_076, vol_at_1, pressure_itime4, pressure_itime5, pressure_itime6,
         pressure_itime_pip5, pressure_itime_pip6, pressure_itime_from_front,
         shear_p_itime,
