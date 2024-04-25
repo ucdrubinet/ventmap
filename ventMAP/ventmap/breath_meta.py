@@ -18,6 +18,9 @@ import pandas as pd
 from scipy import var
 from scipy.integrate import simps
 
+from parliament.polynomial_model import perform_polynomial_model
+from parliament.other_calcs import calc_volumes
+
 from ventmap import SAM
 from ventmap.constants import EXPERIMENTAL_META_HEADER, IN_DATETIME_FORMAT, META_HEADER, OUT_DATETIME_FORMAT,ROW_PREFIX_NAMES
 from ventmap.detection import detect_version_v2
@@ -54,31 +57,34 @@ def _get_file_breath_meta(func, file, tve_pos, ignore_missing_bes, rel_bn_interv
         META_HEADER =EXPERIMENTAL_META_HEADER
         if new_format is False:
             
-            print(META_HEADER)
+            print("meta header inside experiemntal old format",META_HEADER)
             META_HEADER.remove('Patient Id')
         array = [EXPERIMENTAL_META_HEADER]
     else:
         META_HEADER =META_HEADER
         if new_format is False:
             
-            print(META_HEADER)
+            print("meta header insdie non experiemntial old format",META_HEADER)
             META_HEADER.remove('Patient Id')
         array = [META_HEADER]
     
-    print(array)
+    print("only meta header array",array)
     # case that the file is just a raw_utils array of breaths
     if isinstance(file, list):
         for b in file:
             array.append(func(b))
+        print("file is list")
     else:  # case the file is a file descriptor
-        
+        print("file to read",file)
         for breath in extract_raw(file, ignore_missing_bes,rel_bn_interval=rel_bn_interval, vent_bn_interval=vent_bn_interval,spec_vent_bns=spec_vent_bns, spec_rel_bns=spec_rel_bns):
             print("one breath",breath)
             array.append(func(breath))
 
     if not to_data_frame:
+        print("not to df")
         return array
     else:
+        print("array",len(array[1:]),len(array[1:][0]),array[1:][0],len(array[0]),array[0])
         return pd.DataFrame(array[1:], columns=array[0])
 
 
@@ -96,6 +102,7 @@ def get_production_breath_meta(breath, tve_pos=True, calc_tv3=False, to_series=F
     :param calc_tv3: Calculate tvi/tve3
     :param to_series: output breath to a pandas Series object
     """
+    print("#########")
     print("This is breath",breath)
 
     rel_bn = breath['rel_bn']
@@ -278,8 +285,9 @@ def get_production_breath_meta(breath, tve_pos=True, calc_tv3=False, to_series=F
     # 18: ipAUC, 19: epAUC, 20: '', 21: bs_time, 22: x01time, 23: tvi1, 24: tve1,
     # 25: x02index, 26: tvi2, 27: tve2, 28: x0_index, 29: abs_time_at_BS,
     # 30: abs_time_at_x0, 31: abs_time_at_BE, 32: rel_time_at_BS,
-    # 33: rel_time_at_x0, 34: rel_time_at_BE, 35: min_pressure
+    # 33: rel_time_at_x0, 34: rel_time_at_BE, 35: min_pressure, 36: dyn_compliance
     if pt_id is not None:
+        # print("##########","Pt ID is being used","#########")
         breath_metaRow = [
         pt_id,rel_bn, vent_bn, round(rel_time_at_BS, 2), round(rel_time_at_x0, 2), round(rel_time_at_BE, 2), IEratio, iTime,
         eTime, RR, tvi, tve, TVratio, maxF, minF, maxP, PIP,
@@ -324,22 +332,22 @@ def get_experimental_breath_meta(breath, tve_pos=True):
     
     non_experimental = get_production_breath_meta(breath, tve_pos)
     
-
+    # print("length of prefiz",len(ROW_PREFIX_NAMES),ROW_PREFIX_NAMES)
     if pt_id is not None:
-        x0_index = non_experimental[len(ROW_PREFIX_NAMES)+25]
-        tvi = non_experimental[len(ROW_PREFIX_NAMES)+7]
-        minF = non_experimental[len(ROW_PREFIX_NAMES)+11]
-        PIP = non_experimental[len(ROW_PREFIX_NAMES)+13]
-        peep = non_experimental[len(ROW_PREFIX_NAMES)+15]
+        x0_index = non_experimental[1+28]
+        tvi = non_experimental[1+9]
+        minF = non_experimental[1+13]
+        PIP = non_experimental[1+15]
+        peep = non_experimental[1+17]
     else:
-        x0_index = non_experimental[25]
-        tvi = non_experimental[7]
-        minF = non_experimental[11]
-        PIP = non_experimental[13]
-        peep = non_experimental[15]
-    print(x0_index)
-    print(flow)
-    print("non experimental",non_experimental,sep="\n")
+        x0_index = non_experimental[28]
+        tvi = non_experimental[9]
+        minF = non_experimental[13]
+        PIP = non_experimental[15]
+        peep = non_experimental[17]
+    # print(x0_index)
+    # print(flow)
+    # print("non experimental",non_experimental,sep="\n")
     eFlow = flow[x0_index:]  # technically this might need to be +1
 
     # convert tvi to liters. Units are L / cm H20
@@ -365,6 +373,17 @@ def get_experimental_breath_meta(breath, tve_pos=True):
     pressure_itime_from_front = SAM.calc_pressure_itime_from_front(rel_time_array, pressure, PIP, peep, .4)
     shear_p_itime = SAM.shear_transform(pressure, flow, dt) * dt
 
+    flow = np.array(breath['flow']) / 60
+    vols = calc_volumes(flow, breath['dt'])
+    stat_compliance, resist, _, _ = perform_polynomial_model(flow, vols, np.array(breath['pressure']), int(x0_index), float(peep), float(tvi)/1000)
+    # compliance is mult by 1000 because we divide tvi by 1000.
+    stat_compliance = stat_compliance * 1000
+    if stat_compliance>500 or stat_compliance<0:
+        stat_compliance = np.nan
+    if resist<0:
+        resist=np.nan
+    # print("This is compliacne",stat_compliance,stat_compliance>500,stat_compliance<0)
+    # print("This is resistance",resist,resist<0)
     # The array indices go like this
     #
     # 0: rel_bn, 1: vent_bn, 2: rel_time_at_BS, 3: rel_time_at_x0,
@@ -373,18 +392,18 @@ def get_experimental_breath_meta(breath, tve_pos=True):
     # 18: ipAUC, 19: epAUC, 20: '', 21: bs_time, 22: x01time, 23: tvi1, 24: tve1,
     # 25: x02index, 26: tvi2, 27: tve2, 28: x0_index, 29: abs_time_at_BS,
     # 30: abs_time_at_x0, 31: abs_time_at_BE, 32: rel_time_at_BS,
-    # 33: rel_time_at_x0, 34: rel_time_at_BE, 35: min_pressure
+    # 33: rel_time_at_x0, 34: rel_time_at_BE, 35: min_pressure, 36: dyn_compliance
     # 36: pef_to_zero, 37: pef_plus_16_to_zero, 38: mean_flow_from_pef,
-    # 39: dyn_compliance, 40: vol_at_05, 41: vol_at_076, 42: vol_at_1,
-    # 43: pressure_itime4, 44: pressure_itime5, 45: pressure_itime6,
-    # 46: pressure_itime_pip5, 47: pressure_itime_by_pip6, 48: pressure_itime_from_front
-    # 49: pressure_itime_shear,
+    # 39: vol_at_05, 40: vol_at_076, 41: vol_at_1, 42: pressure_itime4,
+    # 43: pressure_itime5, 44: pressure_itime6, 45: pressure_itime_pip5,
+    # 46: pressure_itime_by_pip6, 47: pressure_itime_from_front, 48: pressure_itime_shear
+    # 49: ,
     return non_experimental + [
         pef_to_zero, pef_plus_16_to_zero,
         mean_flow_from_pef, vol_at_05,
         vol_at_076, vol_at_1, pressure_itime4, pressure_itime5, pressure_itime6,
         pressure_itime_pip5, pressure_itime_pip6, pressure_itime_from_front,
-        shear_p_itime,
+        shear_p_itime,stat_compliance,resist
     ]
 
 

@@ -7,11 +7,11 @@ META_HEADER = ROW_PREFIX_NAMES + [
     'rel_time_at_x0', 'rel_time_at_BE', 'min_pressure','dyn_compliance']
 
 EXPERIMENTAL_META_HEADER = META_HEADER + [
-    'minF_to_zero', 'pef_+0.16_to_zero', 'mean_flow_from_pef', 'dyn_compliance',
+    'minF_to_zero', 'pef_+0.16_to_zero', 'mean_flow_from_pef',
     'vol_at_.5_sec', 'vol_at_.76_sec', 'vol_at_1_sec',
     'pressure_itime_4', 'pressure_itime_5', 'pressure_itime_6',
     'pressure_itime_by_pip5', 'pressure_itime_by_pip6', 'pressure_itime_from_front',
-    'pressure_itime_shear',
+    'pressure_itime_shear','stat_compliance','resist'
 ]
 
 # input datetime format from raw breath files

@@ -152,6 +152,7 @@ class VentilatorBase(object):
 
         for row in self.descriptor.readlines():
             row = row.strip().split(',')
+            # print("row read from line",row,row[self.bs_col])
 
             if self.deid_study_idcol is not None :
                 if row[self.deid_study_idcol]!='' and row[self.deid_study_idcol]!='deidentified_study_id':
@@ -169,19 +170,20 @@ class VentilatorBase(object):
                 continue
 
             if date_search.search(row[0]) and not self.ts_1st_col and not self.ts_2nd_col :
-#                 print("inside and",row,row[0],"ts 1col",self.ts_1st_col,"other",self.ts_1st_row)
+                # print("inside and",row,row[0],"ts 1col",self.ts_1st_col,"other",self.ts_1st_row)
                 self.set_abs_bs_time(row)
-#                 print("abs time set to",self.abs_bs_time)
+                # print("abs time set to",self.abs_bs_time)
                 continue
 
             if row[self.bs_col].strip() == "BS":
                 if not skip_breaths_without_be and has_bs:
                     if len(flow) > 0:
-                        print("inside bs,",row)
+                        # print("inside bs,",row,)
                         last_breath_time = self.dt * len(flow)
                         data_list.append(self.get_data(flow, pressure))
                 self.set_rel_bs_time(last_breath_time)
-#                 print("INSIDE BS",last_breath_time)
+                # print(skip_breaths_without_be,has_bs)
+                # print("INSIDE BS",last_breath_time,len(flow),data_list)
                 self.set_abs_bs_time_if_bs(row)
                 self.rel_bn += 1
                 has_bs = True
@@ -215,13 +217,15 @@ class VentilatorBase(object):
 
             elif row[self.bs_col].strip() == "BE":
                 has_bs = False
+                # print("inside elif")
                 if len(flow) > 0:
                     last_breath_time = self.dt * len(flow)
-                    
+                    # print("inside elif +ve flow")
 #                     self.pt_id = int(row[self.deid_study_idcol].strip())
                     data_list.append(self.get_data(flow, pressure))
                     flow, pressure = [], []
             else:
+                # print("inside else")
                 if self.cur_abs_time is not None:
                     self.cur_abs_time += td
                 if not has_bs:
@@ -238,7 +242,8 @@ class VentilatorBase(object):
                     
 #                     self.pt_id = int(row[self.deid_study_idcol].strip())
                     data_list.append(self.get_data(flow, pressure))
-        
+                    
+        # print("returning data list",data_list)
         return data_list
 
 
